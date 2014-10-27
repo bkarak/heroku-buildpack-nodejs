@@ -141,11 +141,11 @@ curl --silent --location http://heroku-jvm-common.s3.amazonaws.com/jvm-buildpack
 
 export_env_dir $env_dir
 
-echo -n "-----> BUILD_DIR is ${build_dir}"
+BUILD_DIR=$build_dir
 
 echo -n "-----> Installing OpenJDK ${javaVersion}..."
-install_java $build_dir 1.8
-jdk_overlay $build_dir
+install_java ${BUILD_DIR} 1.8
+jdk_overlay ${BUILD_DIR}
 
 # Post package.json to nomnom service
 # Use a subshell so failures won't break the build.
