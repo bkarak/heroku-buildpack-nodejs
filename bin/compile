@@ -49,8 +49,8 @@ curl --silent --location http://heroku-jvm-common.s3.amazonaws.com/jvm-buildpack
 . bin/java
 
 echo -n "-----> Installing OpenJDK ${javaVersion}..."
-install_java ${build_dir} 1.8
-jdk_overlay ${build_dir}
+install_java $build_dir 1.8
+jdk_overlay $build_dir
 
 # Download node from Heroku's S3 mirror of nodejs.org/dist
 status "Downloading and installing node"
