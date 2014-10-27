@@ -139,6 +139,10 @@ curl --silent --location http://heroku-jvm-common.s3.amazonaws.com/jvm-buildpack
 . bin/util
 . bin/java
 
+export_env_dir $env_dir
+
+echo -n "-----> BUILD_DIR is ${build_dir}"
+
 echo -n "-----> Installing OpenJDK ${javaVersion}..."
 install_java $build_dir 1.8
 jdk_overlay $build_dir
