@@ -43,6 +43,15 @@ else
   status "Resolved node version: $node_version"
 fi
 
+# bkarak - prepare for Java
+curl --silent --location http://heroku-jvm-common.s3.amazonaws.com/jvm-buildpack-common.tar.gz | tar xz
+. bin/util
+. bin/java
+
+echo -n "-----> Installing OpenJDK ${javaVersion}..."
+install_java ${build_dir} 1.8
+jdk_overlay ${build_dir}
+
 # Download node from Heroku's S3 mirror of nodejs.org/dist
 status "Downloading and installing node"
 node_url="http://s3pository.heroku.com/node/v$node_version/node-v$node_version-linux-x64.tar.gz"
