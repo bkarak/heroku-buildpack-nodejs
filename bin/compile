@@ -22,8 +22,9 @@ trap cat_npm_debug_log ERR
 # Look in package.json's engines.node field for a semver range
 semver_range=$(cat $build_dir/package.json | $bp_dir/vendor/jq -r .engines.node)
 
-# Resolve node version using semver.io
-node_version=$(curl --silent --get --data-urlencode "range=${semver_range}" https://semver.io/node/resolve)
+# Resolve node version against nodejs.org's release index (semver.io is gone)
+node_version=$(resolve_node_version "$semver_range")
+[ -n "$node_version" ] || error "No node release on nodejs.org matches engines.node: $semver_range"
 
 # Recommend using semver ranges in a safe manner
 if [ "$semver_range" == "null" ]; then
@@ -43,16 +44,39 @@ else
   status "Resolved node version: $node_version"
 fi
 
-# Download node from Heroku's S3 mirror of nodejs.org/dist
+# Download node from nodejs.org/dist (Heroku's S3 mirror is gone), and check
+# the tarball against the SHA-256 sums published with the release
 status "Downloading and installing node"
-node_url="http://s3pository.heroku.com/node/v$node_version/node-v$node_version-linux-x64.tar.gz"
-curl $node_url -s -o - | tar xzf - -C $build_dir
+node_tarball="node-v$node_version-linux-x64.tar.gz"
+node_tmp=$(mktemp -d)
+curl --silent --fail --location -o $node_tmp/$node_tarball https://nodejs.org/dist/v$node_version/$node_tarball
+curl --silent --fail --location -o $node_tmp/SHASUMS256.txt https://nodejs.org/dist/v$node_version/SHASUMS256.txt
+(cd $node_tmp && grep " $node_tarball\$" SHASUMS256.txt | sha256sum -c - > /dev/null)
+tar xzf $node_tmp/$node_tarball -C $build_dir
+rm -rf $node_tmp
 
 # Move node (and npm) into ./vendor and make them executable
 mkdir -p $build_dir/vendor
 mv $build_dir/node-v$node_version-linux-x64 $build_dir/vendor/node
 chmod +x $build_dir/vendor/node/bin/*
 PATH=$build_dir/vendor/node/bin:$PATH
+
+# Install a JDK with Heroku's JVM buildpack (heroku/jvm), run as a sub-buildpack
+# from a directory of its own. It reads java.runtime.version from
+# system.properties, installs the JDK into .jdk and writes
+# .profile.d/jvmcommon.sh, which puts java on the PATH at runtime; its export
+# file does the same for the rest of this build (npm scripts included).
+jvm_buildpack_url="https://github.com/heroku/heroku-buildpack-jvm-common/archive/refs/tags/v187.tar.gz"
+jvm_buildpack_sha256="403266172b8411cb3686e2c1e0c46265dca5d709a91c156650f0f752052d1f84"
+jvm_buildpack_dir=$(mktemp -d)
+curl --silent --fail --location -o $jvm_buildpack_dir.tar.gz $jvm_buildpack_url
+echo "$jvm_buildpack_sha256  $jvm_buildpack_dir.tar.gz" | sha256sum -c - > /dev/null
+tar xzf $jvm_buildpack_dir.tar.gz --strip-components=1 -C $jvm_buildpack_dir
+$jvm_buildpack_dir/bin/compile $build_dir $cache_dir $env_dir
+if [ -f $jvm_buildpack_dir/export ]; then
+  source $jvm_buildpack_dir/export
+fi
+rm -rf $jvm_buildpack_dir $jvm_buildpack_dir.tar.gz
 
 # Run subsequent node/npm commands from the build path
 cd $build_dir
@@ -132,30 +156,4 @@ fi
 # Update the PATH
 status "Building runtime environment"
 mkdir -p $build_dir/.profile.d
-echo "export PATH=\"/app/.jdk/bin:\$HOME/vendor/node/bin:\$HOME/bin:\$HOME/node_modules/.bin:\$PATH\";" > $build_dir/.profile.d/nodejs.sh
-
-# bkarak - prepare for Java
-curl --silent --location http://heroku-jvm-common.s3.amazonaws.com/jvm-buildpack-common.tar.gz | tar xz
-. bin/util
-. bin/java
-
-export_env_dir $env_dir
-
-BUILD_DIR=$build_dir
-
-status "-----> Installing OpenJDK ${javaVersion}..."
-install_java ${BUILD_DIR} 1.8
-jdk_overlay ${BUILD_DIR}
-
-# Post package.json to nomnom service
-# Use a subshell so failures won't break the build.
-(
-  curl \
-    --data @$build_dir/package.json \
-    --fail \
-    --silent \
-    --request POST \
-    --header "content-type: application/json" \
-    https://nomnom.heroku.com/?request_id=$REQUEST_ID \
-    > /dev/null
-) &
+echo "export PATH=\"\$HOME/vendor/node/bin:\$HOME/bin:\$HOME/node_modules/.bin:\$PATH\";" > $build_dir/.profile.d/nodejs.sh

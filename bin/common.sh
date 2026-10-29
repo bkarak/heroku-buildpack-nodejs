@@ -41,3 +41,30 @@ export_env_dir() {
     done
   fi
 }
+
+# Resolve the engines.node range to a release listed in nodejs.org's index.
+# Handles exact versions (0.10.32), x-ranges (0.10.x, 0.10, 22.x, 22), and ^ and
+# ~ as their major and minor lines. An empty range or * means the latest LTS
+# release; so does anything else, with a warning.
+resolve_node_version() {
+  local range=${1#v} releases pattern
+  [ "$range" == "null" ] && range=""
+  releases=$(curl --silent --fail --location https://nodejs.org/dist/index.json | $bp_dir/vendor/jq -r '.[] | "\(.version) \(.lts)"') ||
+    error "Unable to download the node release index from nodejs.org"
+  case "$range" in
+    ""|"*"|x|X)           pattern="" ;;
+    ^[0-9]*)              pattern="$(echo "${range#^}" | cut -d. -f1)." ;;
+    ~[0-9]*)              pattern="$(echo "${range#\~}" | cut -d. -f1-2)." ;;
+    [0-9]*.[xX])          pattern="${range%[xX]}" ;;
+    [0-9]*.[0-9]*.[0-9]*) pattern="$range " ;;
+    [0-9]*)               pattern="$range." ;;
+    *)                    pattern=""
+                          echo "Unsupported engines.node range: $range; using the latest LTS release" | indent >&2 ;;
+  esac
+  # The index lists releases newest first, so the first match is the newest.
+  if [ -z "$pattern" ]; then
+    echo "$releases" | awk '$2 != "false" { split(substr($1, 2), v, "."); if (v[1] + 0 > major) { major = v[1] + 0; version = substr($1, 2) } } END { print version }'
+  else
+    echo "$releases" | awk -v p="v$pattern" 'index($0, p) == 1 { print substr($1, 2); exit }'
+  fi
+}

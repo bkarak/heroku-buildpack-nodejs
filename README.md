@@ -1,6 +1,17 @@
 Heroku Buildpack for Node.js
 ============================
 
+> **Note (October 2026):** this fork (2014) adds a JDK to the Node.js buildpack, so that a Node.js application can run Java programs. It is kept for the record.
+>
+> It was fixed in 2026. The JDK is now installed by running Heroku's JVM buildpack (release v187, checksum-verified) as a sub-buildpack, instead of sourcing the 2014 JVM library into the application's build directory, and its version comes from `java.runtime.version` in `system.properties`. Node versions are resolved against nodejs.org's release index instead of semver.io, which is gone, and node is downloaded from nodejs.org and checked against the release's SHA-256 sums instead of Heroku's retired S3 mirror. The rest is the 2014 buildpack, and it has not been tested on a current Heroku stack.
+>
+> Today the same thing takes no fork. Put `java.runtime.version=21` (or the version you need) in `system.properties`, and add the JVM buildpack in front of the Node.js one:
+>
+>     heroku buildpacks:set heroku/nodejs
+>     heroku buildpacks:add --index 1 heroku/jvm
+>
+> The story of this fork: [Blast from the past: the Heroku buildpacks I forked](https://bkarak.wizhut.tech/blog/2026/29102026).
+
 This is the official [Heroku buildpack](http://devcenter.heroku.com/articles/buildpacks) for Node.js apps. If you fork this repository, please **update this README** to explain what your fork does and why it's special.
 
 
@@ -9,9 +20,10 @@ How it Works
 
 Here's an overview of what this buildpack does:
 
-- Uses the [semver.io](https://semver.io) webservice to find the latest version of node that satisfies the [engines.node semver range](https://npmjs.org/doc/json.html#engines) in your package.json.
-- Allows any recent version of node to be used, including [pre-release versions](https://semver.io/node.json).
-- Uses an [S3 caching proxy](https://github.com/heroku/s3pository#readme) of nodejs.org for faster downloads of the node binary.
+- Uses [nodejs.org's release index](https://nodejs.org/dist/index.json) to find the newest version of node that satisfies the [engines.node semver range](https://docs.npmjs.com/cli/configuring-npm/package-json#engines) in your package.json (exact versions, x-ranges, `^` and `~`; anything else gets the latest LTS release).
+- Allows any version of node published on nodejs.org to be used.
+- Downloads the node binary from nodejs.org and checks it against the SHA-256 sums published with the release.
+- Installs a JDK with Heroku's [JVM buildpack](https://github.com/heroku/heroku-buildpack-jvm-common), using `java.runtime.version` from `system.properties`, and puts `java` on the `PATH`.
 - Discourages use of dangerous semver ranges like `*` and `>0.10`.
 - Uses the version of `npm` that comes bundled with `node`.
 - Puts `node` and `npm` on the `PATH` so they can be executed with [heroku run](https://devcenter.heroku.com/articles/one-off-dynos#an-example-one-off-dyno).
